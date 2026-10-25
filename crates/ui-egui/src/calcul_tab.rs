@@ -23,7 +23,7 @@ struct State {
 }
 
 fn state_id() -> egui::Id {
-    egui::Id::new("calcul_tab_state")
+    egui::Id::unique("calcul_tab_state")
 }
 
 fn load(ui: &Ui) -> State {
@@ -83,7 +83,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 ui.add(TextEdit::singleline(&mut st.var_unit).desired_width(40.0).hint_text("unité"));
                 if ui.button("Définir").on_hover_text("Créer ou modifier la variable à cet élément").clicked() {
                     let r = app.run("var.set", json!({"path": st.path, "name": st.var_name, "value": st.var_value, "unit": st.var_unit}));
-                    set_message(&mut st, r.map(|_| format!("{} défini", st.var_name)));
+                    let done = format!("{} défini", st.var_name);
+                    set_message(&mut st, r.map(|_| done));
                 }
             });
             ui.menu_button("Voir les variables ▾", |ui| {
@@ -128,7 +129,8 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                 let go = ui.add(egui::Button::new("=").min_size(egui::vec2(36.0, 24.0))).on_hover_text("Calculer et insérer le résultat dans le texte").clicked();
                 if go || enter {
                     let r = app.run("calc.compute", json!({"path": st.path, "formula": st.formula, "unit": st.unit}));
-                    set_message(&mut st, r.map(|v| format!("= {} {}", v.get("text").and_then(Value::as_str).unwrap_or(""), st.unit)));
+                    let unit = st.unit.clone();
+                    set_message(&mut st, r.map(|v| format!("= {} {}", v.get("text").and_then(Value::as_str).unwrap_or(""), unit)));
                     app.canvas.want_focus = true;
                 }
             });
