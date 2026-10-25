@@ -18,6 +18,9 @@ pub fn specs() -> Vec<CommandSpec> {
             .params(r#"{"path"?: string: every variable visible from this element, with where it comes from; omit for the whole tree}"#)
             .pure(),
         CommandSpec::new("var.resolve", "Resolve Variable", LOC, resolve).params(r#"{"path"?: string, "name": string}"#).pure(),
+        CommandSpec::new("calc.compute", "Calculate", "Math › Calcul", compute).params(
+            r#"{"path"?: string, "formula": string ("M := p*L^2/8" defines M; "p*L^2/8" only shows the result), "unit"?: string, "insert"?: bool (default true: put the result in the text as an equation), "display"?: bool}"#,
+        ),
         CommandSpec::new("var.eval", "Evaluate Formula", LOC, eval)
             .params(r#"{"path"?: string, "formula": string (e.g. "p*L^2/8"), "name"?: string: also store the result under this name at `path`}"#),
     ]
@@ -99,4 +102,32 @@ fn eval(s: &mut Session, v: &Value) -> CmdResult {
         store.save(&mut s.doc);
     }
     Ok(json!({"number": x, "text": text}))
+}
+
+/// The calculation bar's "=": evaluates `name := formula` (or a bare formula) as seen from the
+/// element `path`, keeps the definition in the variable tree, and writes `name = result unit` into
+/// the text as an equation.
+fn compute(s: &mut Session, v: &Value) -> CmdResult {
+    let formula = p::req_str(v, "formula")?;
+    let unit = p::str(v, "unit").unwrap_or("").trim().to_string();
+    let (target, expr) = match formula.split_once(":=") {
+        Some((n, e)) => (Some(n.trim().to_string()), e.trim().to_string()),
+        None => (None, formula.trim().trim_start_matches('=').to_string()),
+    };
+    if expr.is_empty() {
+        return Err(CmdError::Params("the formula is empty".into()));
+    }
+    let mut store = VarStore::load(&s.doc);
+    let x = store.eval(path(v), &expr).map_err(CmdError::Failed)?;
+    let text = format_number(x);
+    if let Some(name) = &target {
+        store.set(path(v), name, Var { value: format!("={expr}"), unit: unit.clone(), ..Var::default() }).map_err(CmdError::Params)?;
+        store.save(&mut s.doc);
+    }
+    if p::bool(v, "insert").unwrap_or(true) {
+        let lhs = target.clone().unwrap_or_else(|| expr.clone());
+        let tail = if unit.is_empty() { String::new() } else { format!(" {unit}") };
+        super::equation::insert_linear(s, &format!("{lhs}={text}{tail}"), p::bool(v, "display"))?;
+    }
+    Ok(json!({"name": target, "number": x, "text": text, "unit": unit}))
 }

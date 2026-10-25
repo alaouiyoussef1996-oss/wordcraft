@@ -534,6 +534,7 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
                     match app.ui.tab.as_str() {
                         "Home" => home(app, ui),
                         "Insert" => insert(app, ui),
+                        "Calcul" => crate::calcul_tab::show(app, ui),
                         "Draw" => draw(app, ui),
                         "Design" => design(app, ui),
                         "Layout" => layout(app, ui),

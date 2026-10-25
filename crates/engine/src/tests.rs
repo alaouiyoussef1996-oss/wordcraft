@@ -10983,3 +10983,17 @@ fn variables_tree_commands_and_docx_round_trip() {
     assert!(s.run("var.resolve", &json!({"path": "RDC/D1", "name": "M"})).is_err());
     assert!(s.run("var.set", &json!({"name": "1bad", "value": "1"})).is_err());
 }
+
+/// Calcul: the calculation bar's `=` defines the variable and writes `M=437,5 kN·m` as an equation.
+#[test]
+fn calc_compute_defines_the_variable_and_inserts_an_equation() {
+    let mut s = s();
+    run(&mut s, "var.set", json!({"path": "RDC", "name": "p", "value": "140"}));
+    run(&mut s, "var.set", json!({"path": "RDC/D1", "name": "L", "value": "5"}));
+    let r = run(&mut s, "calc.compute", json!({"path": "RDC/D1", "formula": "M := p*L^2/8", "unit": "kN·m", "display": false}));
+    assert_eq!(r["text"], "437,5");
+    let got = run(&mut s, "var.resolve", json!({"path": "RDC/D1", "name": "M"}));
+    assert_eq!(got["text"], "437,5");
+    assert!(s.run("calc.compute", &json!({"path": "RDC/D1", "formula": "M2 := q*2"})).is_err(), "unknown variable");
+    assert!(s.run("calc.compute", &json!({"formula": "  "})).is_err());
+}

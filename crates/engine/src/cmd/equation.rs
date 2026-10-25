@@ -221,6 +221,16 @@ fn insert(s: &mut Session, v: &Value) -> CmdResult {
     insert_nodes_as_equation(s, nodes, v)
 }
 
+/// Inserts an equation written in the linear format, without opening it for editing (used by
+/// the calculation bar, `calc.compute`).
+pub(crate) fn insert_linear(s: &mut Session, linear: &str, display: Option<bool>) -> CmdResult {
+    let mut v = json!({"edit": false});
+    if let (Some(d), Some(o)) = (display, v.as_object_mut()) {
+        o.insert("display".into(), Value::Bool(d));
+    }
+    insert_nodes_as_equation(s, parse_linear(linear), &v)
+}
+
 /// Clears any editing session, deletes the selection, creates an equation object (display on an
 /// empty line unless the request overrides it), optionally opens editing at the first
 /// placeholder, and reports a content change.
