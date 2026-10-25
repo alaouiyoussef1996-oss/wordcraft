@@ -3347,6 +3347,7 @@ fn context_menu(app: &mut WordApp, ui: &mut Ui) {
         return equation_menu(app, ui);
     }
     ui.set_min_width(220.0);
+    crate::calcul_tab::formula_context(app, ui);
     let item = |ui: &mut Ui, app: &mut WordApp, label: &str, id: &str, params: serde_json::Value| {
         let sc = crate::widgets::shortcut_text(app, id);
         let on = crate::widgets::enabled(app, id);

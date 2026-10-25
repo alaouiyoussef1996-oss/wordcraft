@@ -10997,3 +10997,52 @@ fn calc_compute_defines_the_variable_and_inserts_an_equation() {
     assert!(s.run("calc.compute", &json!({"path": "RDC/D1", "formula": "M2 := q*2"})).is_err(), "unknown variable");
     assert!(s.run("calc.compute", &json!({"formula": "  "})).is_err());
 }
+
+#[test]
+fn formulas_in_the_text_follow_the_variables() {
+    use wordcraft_doc::InlineObject;
+    let mut s = s();
+    run(&mut s, "var.set", json!({"path": "RDC", "name": "p", "value": "140"}));
+    run(&mut s, "var.set", json!({"path": "RDC/D1", "name": "L", "value": "5"}));
+    run(&mut s, "calc.compute", json!({"path": "RDC/D1", "formula": "M = p*L^2/8", "unit": "kN·m", "display": false}));
+    let eq = |s: &Session| {
+        let mut found = Vec::new();
+        s.doc.objects_in_reading_order(&mut |o| {
+            if let InlineObject::Equation { linear, .. } = o {
+                found.push(linear.clone());
+            }
+        });
+        found
+    };
+    assert!(eq(&s).iter().any(|l| l == "M=437,5kN·m"), "{:?}", eq(&s));
+    run(&mut s, "var.set", json!({"path": "RDC/D1", "name": "L", "value": "6"}));
+    assert!(eq(&s).iter().any(|l| l == "M=630kN·m"), "{:?}", eq(&s));
+    run(&mut s, "var.set", json!({"path": "RDC", "name": "p", "value": "100"}));
+    assert!(eq(&s).iter().any(|l| l == "M=450kN·m"), "{:?}", eq(&s));
+}
+
+#[test]
+fn typed_formulas_are_calculated_and_follow_the_variables() {
+    use wordcraft_doc::InlineObject;
+    let mut s = s();
+    run(&mut s, "var.set", json!({"path": "RDC", "name": "p", "value": "140"}));
+    run(&mut s, "var.set", json!({"path": "RDC/D1", "name": "L", "value": "5"}));
+    run(&mut s, "text.insert", json!({"text": "@RDC/D1"}));
+    run(&mut s, "text.newParagraph", json!({}));
+    run(&mut s, "text.insert", json!({"text": "M := p*L^2/8 [kN·m]"}));
+    run(&mut s, "text.newParagraph", json!({}));
+    let r = run(&mut s, "calc.scan", json!({}));
+    assert_eq!(r["calculated"], 1, "{r}");
+    let eqs = |s: &Session| {
+        let mut f = Vec::new();
+        s.doc.objects_in_reading_order(&mut |o| {
+            if let InlineObject::Equation { linear, .. } = o {
+                f.push(linear.clone());
+            }
+        });
+        f
+    };
+    assert!(eqs(&s).iter().any(|l| l == "M=437,5kN·m"), "{:?}", eqs(&s));
+    run(&mut s, "var.set", json!({"path": "RDC/D1", "name": "L", "value": "6"}));
+    assert!(eqs(&s).iter().any(|l| l == "M=630kN·m"), "{:?}", eqs(&s));
+}

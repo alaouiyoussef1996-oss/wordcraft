@@ -93,8 +93,8 @@ pub(crate) fn placeholder_linears() -> impl Iterator<Item = String> {
         .chain(symbols)
 }
 
-/// A big ribbon button whose picture is an equation; opens `menu`.
-fn math_menu_button(ui: &mut Ui, app: &mut WordApp, picture: &str, label: &str, menu: impl FnOnce(&mut Ui, &mut WordApp)) {
+/// A big ribbon button whose picture is an equation (no menu).
+pub(crate) fn math_big_button(ui: &mut Ui, app: &mut WordApp, picture: &str, label: &str) -> egui::Response {
     let label = tl!(label);
     let t = Tokens::get(ui.ctx());
     let galley_w =
@@ -113,7 +113,12 @@ fn math_menu_button(ui: &mut Ui, app: &mut WordApp, picture: &str, label: &str, 
         crate::widgets::label_line(ui, r.center().x, y, l, regular(11.5), t.text, i + 1 == lines.len());
         y += LABEL_PITCH;
     }
-    let resp = resp.on_hover_text(label.replace('\n', " "));
+    resp.on_hover_text(label.replace('\n', " "))
+}
+
+/// A big ribbon button whose picture is an equation; opens `menu`.
+pub(crate) fn math_menu_button(ui: &mut Ui, app: &mut WordApp, picture: &str, label: &str, menu: impl FnOnce(&mut Ui, &mut WordApp)) {
+    let resp = math_big_button(ui, app, picture, label);
     egui::Popup::menu(&resp).show(|ui| {
         ui.set_min_width(260.0);
         menu(ui, app);

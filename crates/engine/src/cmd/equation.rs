@@ -84,7 +84,7 @@ fn near_equation_or_all(_: &Session) -> Option<&'static str> {
 }
 
 /// The equation the caret is at: on its U+FFFC or just after it (or the one being edited).
-fn equation_at_caret(s: &Session) -> Option<Pos> {
+pub(crate) fn equation_at_caret(s: &Session) -> Option<Pos> {
     if let Some(m) = &s.math {
         return Some(m.at.clone());
     }
