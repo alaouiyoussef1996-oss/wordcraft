@@ -12,6 +12,7 @@
 
 pub mod bidi;
 mod byte_store;
+pub mod calc;
 pub mod chart;
 mod cjk_numbers;
 pub mod cluster;

@@ -48,6 +48,7 @@ pub mod templates;
 pub mod text;
 pub mod tools;
 pub mod user_templates;
+pub mod vars;
 pub mod view;
 pub mod wordart;
 
@@ -104,6 +105,7 @@ pub fn registry() -> Registry {
     v.extend(protect::specs());
     v.extend(speech::specs());
     v.extend(controls::specs());
+    v.extend(vars::specs());
     Registry::new(v)
 }
 

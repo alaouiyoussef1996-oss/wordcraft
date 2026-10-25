@@ -10953,3 +10953,33 @@ fn scale_font_sizes_reaches_char_table_and_cs_sizes_and_unset_default() {
     assert_eq!(grid.header_chr.size, Some(16.0));
     assert_eq!(grid.regions.get(&TablePart::Band2Horz).unwrap().chr.size, Some(10.0));
 }
+
+/// Calcul: the variable tree is set through commands, inherits and overrides, evaluates
+/// formulas at the element asked about, undoes, and survives a .docx save and reopen.
+#[test]
+fn variables_tree_commands_and_docx_round_trip() {
+    let mut s = s();
+    run(&mut s, "var.set", json!({"name": "fck", "value": "35", "unit": "MPa"}));
+    run(&mut s, "var.set", json!({"path": "RDC", "name": "h", "value": 200}));
+    run(&mut s, "var.set", json!({"path": "RDC", "name": "e", "value": "0,7"}));
+    run(&mut s, "var.set", json!({"path": "RDC/D1", "name": "L", "value": "5"}));
+    run(&mut s, "var.set", json!({"path": "RDC/D2", "name": "L", "value": "6,2"}));
+    run(&mut s, "var.set", json!({"path": "RDC/D2", "name": "h", "value": "250"}));
+    run(&mut s, "var.eval", json!({"path": "RDC", "formula": "p := h*e"}));
+    let m1 = run(&mut s, "var.eval", json!({"path": "RDC/D1", "formula": "M := p*L^2/8"}));
+    assert_eq!(m1["text"], "437,5");
+    let m2 = run(&mut s, "var.eval", json!({"path": "RDC/D2", "formula": "p*L^2/8"}));
+    assert_eq!(m2["text"], "840,875", "D2 overrides h and L, so its own p applies");
+    let h = run(&mut s, "var.resolve", json!({"path": "RDC/D1", "name": "h"}));
+    assert_eq!(h["origin"], "RDC");
+    let listed = run(&mut s, "var.list", json!({"path": "RDC/D2"}));
+    assert!(listed["variables"].as_array().unwrap().iter().any(|v| v["name"] == "fck" && v["origin"] == ""));
+
+    let back = wordcraft_docx::read(&wordcraft_docx::write(&s.doc).unwrap()).unwrap();
+    let store = wordcraft_doc::calc::VarStore::load(&back);
+    assert_eq!(store.resolve("RDC/D1", "M").unwrap().text, "437,5");
+
+    run(&mut s, "var.delete", json!({"path": "RDC/D1", "name": "M"}));
+    assert!(s.run("var.resolve", &json!({"path": "RDC/D1", "name": "M"})).is_err());
+    assert!(s.run("var.set", &json!({"name": "1bad", "value": "1"})).is_err());
+}
