@@ -45,7 +45,10 @@ fn craft_i18n() -> String {
     println!("cargo::rerun-if-env-changed=CRAFT_I18N_DIR");
     println!("cargo::rerun-if-env-changed=CRAFT_I18N_REQUIRED");
     let required = std::env::var("CRAFT_I18N_REQUIRED").is_ok_and(|v| v.trim() == "1");
-    let entries = match std::env::var_os("CRAFT_I18N_DIR").filter(|d| !d.is_empty()) {
+    // Without CRAFT_I18N_DIR, use the French catalog shipped in `vendor/craft-i18n` (this fork).
+    let vendored = std::path::PathBuf::from(std::env::var_os("CARGO_MANIFEST_DIR").unwrap_or_default()).join("../../vendor/craft-i18n");
+    let dir = std::env::var_os("CRAFT_I18N_DIR").filter(|d| !d.is_empty()).or_else(|| vendored.join("locales").is_dir().then(|| vendored.into_os_string()));
+    let entries = match dir {
         // Not canonicalized: on Windows that gives `\\?\C:\…`, which `include_str!` can't read.
         Some(dir) => match locales(&std::path::PathBuf::from(dir).join("locales")) {
             Ok(entries) => entries,
