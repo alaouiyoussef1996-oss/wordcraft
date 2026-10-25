@@ -82,6 +82,7 @@ fn category_picture(cat: &str) -> &'static str {
         "Algèbre" => "x²−1=0",
         "Analyse" => "∫_(−x)^x",
         "Matrices" => "[■(1&0@0&1)]",
+        "Conditions et boucles" => "if",
         _ => "x",
     }
 }
@@ -156,22 +157,30 @@ fn formulas_group(app: &mut WordApp, ui: &mut Ui, st: &mut State) {
     });
 }
 
-/// Symbols: a small grid, like the equation tab's.
+/// Symbols: a drop-down gallery by category, like the equation tab's.
 fn symbols_group(app: &mut WordApp, ui: &mut Ui, st: &mut State) {
-    const SYMS: [(&str, &str); 20] = [
-        ("±", "+-"), ("∞", "inf"), ("=", "="), ("≠", "!="), ("×", "*"), ("÷", "/"), ("^", "^"), ("√", "sqrt(▯)"), ("π", "pi"), ("°", "*pi/180"),
-        ("<", "<"), (">", ">"), ("≤", "<="), ("≥", ">="), ("(", "("), (")", ")"), (";", ";"), ("%", "/100"), ("e", "e"), ("∑", "sum(▯; i; 1; n)"),
+    const SETS: [(&str, &[(&str, &str)]); 5] = [
+        ("Opérateurs", &[("±", "+-"), ("×", "*"), ("÷", "/"), ("^", "^"), ("√", "sqrt(▯)"), ("%", "/100"), ("(", "("), (")", ")"), (";", ";"), ("∑", "sum(▯; i; 1; n)")]),
+        ("Comparaison", &[("=", "="), ("≠", "!="), ("<", "<"), (">", ">"), ("≤", "<="), ("≥", ">=")]),
+        ("Logique", &[("et", " and "), ("ou", " or "), ("non", "not "), ("vrai", "true"), ("faux", "false")]),
+        ("Constantes", &[("π", "pi"), ("e", "e_"), ("°", "*pi/180")]),
+        ("Lettres grecques", &[("α", "α"), ("β", "β"), ("γ", "γ"), ("δ", "δ"), ("ε", "ε"), ("θ", "θ"), ("λ", "λ"), ("μ", "μ"), ("ν", "ν"), ("ρ", "ρ"), ("σ", "σ"), ("τ", "τ"), ("φ", "φ"), ("ψ", "ψ"), ("ω", "ω"), ("Δ", "Δ"), ("Σ", "Σ"), ("Ω", "Ω")]),
     ];
-    group(ui, "Symboles", None, app, |ui, _| {
-        egui::Grid::new("calcul_symbols").spacing([2.0, 2.0]).show(ui, |ui| {
-            for (i, (shown, tpl)) in SYMS.iter().enumerate() {
-                if ui.add_sized([26.0, 24.0], egui::Button::new(*shown)).clicked() {
-                    add_to_formula(st, tpl);
-                    st.show_formula = true;
-                }
-                if i % 10 == 9 {
-                    ui.end_row();
-                }
+    group(ui, "Symboles", None, app, |ui, app| {
+        math_menu_button(ui, app, "±  π  ≠", "Symboles", |ui, _| {
+            ui.set_min_width(260.0);
+            for (title, items) in SETS {
+                ui.label(egui::RichText::new(title).font(semibold(12.0)));
+                ui.horizontal_wrapped(|ui| {
+                    for (shown, tpl) in items {
+                        if ui.add_sized([32.0, 26.0], egui::Button::new(*shown)).on_hover_text(*tpl).clicked() {
+                            add_to_formula(st, tpl);
+                            st.show_formula = true;
+                            ui.close();
+                        }
+                    }
+                });
+                ui.add_space(4.0);
             }
         });
     });

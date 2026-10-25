@@ -216,6 +216,8 @@ enum Tok {
     Num(f64),
     Id(String),
     Op(char),
+    /// A comparison: `<` `>` `l` (≤) `g` (≥) `=` `n` (≠).
+    Cmp(char),
     LP,
     RP,
     Comma,
@@ -251,6 +253,25 @@ fn lex(s: &str) -> Result<Vec<Tok>, String> {
                 }
                 let t: String = cs.get(st..i).unwrap_or_default().iter().collect();
                 out.push(Tok::Num(parse_number(&t).ok_or_else(|| format!("bad number `{t}`"))?));
+            }
+            '<' | '>' | '=' | '!' | '≤' | '≥' | '≠' => {
+                let next_eq = cs.get(i + 1) == Some(&'=');
+                let (code, adv) = match (c, next_eq) {
+                    ('<', true) => ('l', 2),
+                    ('>', true) => ('g', 2),
+                    ('=', true) => ('=', 2),
+                    ('!', true) => ('n', 2),
+                    ('<', false) if cs.get(i + 1) == Some(&'>') => ('n', 2),
+                    ('<', false) => ('<', 1),
+                    ('>', false) => ('>', 1),
+                    ('=', false) => ('=', 1),
+                    ('≤', _) => ('l', 1),
+                    ('≥', _) => ('g', 1),
+                    ('≠', _) => ('n', 1),
+                    _ => return Err("unexpected `!`".into()),
+                };
+                out.push(Tok::Cmp(code));
+                i += adv;
             }
             '(' => {
                 out.push(Tok::LP);
@@ -311,7 +332,13 @@ struct Parser<'a> {
     i: usize,
     look: &'a mut dyn FnMut(&str) -> Result<f64, String>,
     depth: usize,
+    /// Loop variables (innermost last), looked up before the document's variables.
+    locals: Vec<(String, f64)>,
+    /// Loop iterations spent so far (bounded by `MAX_STEPS`).
+    steps: usize,
 }
+
+const MAX_STEPS: usize = 200_000;
 
 /// Evaluate `formula`; `look` supplies variable values.
 pub fn eval_with(formula: &str, look: &mut dyn FnMut(&str) -> Result<f64, String>) -> Result<f64, String> {
@@ -319,8 +346,8 @@ pub fn eval_with(formula: &str, look: &mut dyn FnMut(&str) -> Result<f64, String
     if t.is_empty() {
         return Err("empty formula".into());
     }
-    let mut p = Parser { t, i: 0, look, depth: 0 };
-    let v = p.sum()?;
+    let mut p = Parser { t, i: 0, look, depth: 0, locals: Vec::new(), steps: 0 };
+    let v = p.or_()?;
     if p.i != p.t.len() {
         return Err("unexpected text after the formula".into());
     }
@@ -335,6 +362,195 @@ pub fn eval_const(formula: &str) -> Result<f64, String> {
 impl Parser<'_> {
     fn peek(&self) -> Option<&Tok> {
         self.t.get(self.i)
+    }
+
+    fn word(&self) -> Option<&'static str> {
+        match self.peek() {
+            Some(Tok::Id(w)) => match w.as_str() {
+                "or" | "ou" => Some("or"),
+                "and" | "et" => Some("and"),
+                "not" | "non" => Some("not"),
+                _ => None,
+            },
+            _ => None,
+        }
+    }
+
+    /// `a or b` (1 for true, 0 for false).
+    fn or_(&mut self) -> Result<f64, String> {
+        let mut a = self.and_()?;
+        while self.word() == Some("or") {
+            self.i += 1;
+            let b = self.and_()?;
+            a = f64::from(a != 0.0 || b != 0.0);
+        }
+        Ok(a)
+    }
+
+    fn and_(&mut self) -> Result<f64, String> {
+        let mut a = self.not_()?;
+        while self.word() == Some("and") {
+            self.i += 1;
+            let b = self.not_()?;
+            a = f64::from(a != 0.0 && b != 0.0);
+        }
+        Ok(a)
+    }
+
+    fn not_(&mut self) -> Result<f64, String> {
+        if self.word() == Some("not") {
+            self.i += 1;
+            self.depth += 1;
+            if self.depth > MAX_DEPTH {
+                return Err("formula nests too deeply".into());
+            }
+            let v = self.not_();
+            self.depth -= 1;
+            return Ok(f64::from(v? == 0.0));
+        }
+        self.cmp()
+    }
+
+    fn cmp(&mut self) -> Result<f64, String> {
+        let a = self.sum()?;
+        if let Some(Tok::Cmp(c)) = self.peek().cloned() {
+            self.i += 1;
+            let b = self.sum()?;
+            let eq = (a - b).abs() <= 1e-9 * a.abs().max(b.abs()).max(1.0);
+            return Ok(f64::from(match c {
+                '<' => a < b && !eq,
+                '>' => a > b && !eq,
+                'l' => a < b || eq,
+                'g' => a > b || eq,
+                '=' => eq,
+                _ => !eq,
+            }));
+        }
+        Ok(a)
+    }
+
+    /// After a `(`: the token ranges of the arguments up to the matching `)`, which is consumed.
+    fn arg_ranges(&mut self) -> Result<Vec<(usize, usize)>, String> {
+        let mut out = Vec::new();
+        let mut start = self.i;
+        let mut level = 0usize;
+        while let Some(t) = self.t.get(self.i) {
+            match t {
+                Tok::LP => level += 1,
+                Tok::RP if level == 0 => {
+                    out.push((start, self.i));
+                    self.i += 1;
+                    return Ok(out);
+                }
+                Tok::RP => level -= 1,
+                Tok::Comma if level == 0 => {
+                    out.push((start, self.i));
+                    start = self.i + 1;
+                }
+                _ => {}
+            }
+            self.i += 1;
+            if out.len() > 16 {
+                return Err("too many arguments".into());
+            }
+        }
+        Err("missing `)`".into())
+    }
+
+    /// Evaluate the tokens in `range` (with the current loop variables) without moving `self.i`.
+    fn eval_range(&mut self, range: (usize, usize)) -> Result<f64, String> {
+        let back = self.i;
+        self.i = range.0;
+        let r = self.or_();
+        let ok = self.i == range.1;
+        self.i = back;
+        let v = r?;
+        if ok { Ok(v) } else { Err("unexpected text in the argument".into()) }
+    }
+
+    fn range_name(&self, range: (usize, usize)) -> Result<String, String> {
+        match (self.t.get(range.0), range.1.saturating_sub(range.0)) {
+            (Some(Tok::Id(n)), 1) => Ok(n.clone()),
+            _ => Err("a variable name is expected here".into()),
+        }
+    }
+
+    fn step(&mut self) -> Result<(), String> {
+        self.steps += 1;
+        if self.steps > MAX_STEPS { Err("loop runs too long".into()) } else { Ok(()) }
+    }
+
+    /// `if(c; a; b)`, `sum(e; i; a; b)`, `prod(e; i; a; b)`, `while(x; x0; cond; next)`.
+    /// Only the chosen branch is evaluated.
+    fn lazy_form(&mut self, name: &str) -> Result<Option<f64>, String> {
+        let kind = match name {
+            "if" | "si" => 0,
+            "sum" | "somme" => 1,
+            "prod" | "produit" => 2,
+            "while" | "tantque" => 3,
+            _ => return Ok(None),
+        };
+        self.i += 1; // the `(`
+        let r = self.arg_ranges()?;
+        let after = self.i;
+        let v = match (kind, r.as_slice()) {
+            (0, [c, a, b]) => {
+                let cond = self.eval_range(*c)?;
+                self.eval_range(if cond != 0.0 { *a } else { *b })?
+            }
+            (1 | 2, [e, i, lo, hi]) => {
+                let var = self.range_name(*i)?;
+                let (lo, hi) = (self.eval_range(*lo)?.round(), self.eval_range(*hi)?.round());
+                let mut acc = if kind == 1 { 0.0 } else { 1.0 };
+                let mut k = lo;
+                self.locals.push((var, 0.0));
+                while k <= hi {
+                    self.step()?;
+                    if let Some(l) = self.locals.last_mut() {
+                        l.1 = k;
+                    }
+                    match self.eval_range(*e) {
+                        Ok(x) => acc = if kind == 1 { acc + x } else { acc * x },
+                        Err(err) => {
+                            self.locals.pop();
+                            return Err(err);
+                        }
+                    }
+                    k += 1.0;
+                }
+                self.locals.pop();
+                acc
+            }
+            (3, [x, init, cond, next]) => {
+                let var = self.range_name(*x)?;
+                let start = self.eval_range(*init)?;
+                self.locals.push((var, start));
+                let out = loop {
+                    if let Err(e) = self.step() {
+                        self.locals.pop();
+                        return Err(e);
+                    }
+                    match self.eval_range(*cond) {
+                        Ok(c) if c == 0.0 => break Ok(self.locals.last().map_or(start, |l| l.1)),
+                        Ok(_) => {}
+                        Err(e) => break Err(e),
+                    }
+                    match self.eval_range(*next) {
+                        Ok(n) => {
+                            if let Some(l) = self.locals.last_mut() {
+                                l.1 = n;
+                            }
+                        }
+                        Err(e) => break Err(e),
+                    }
+                };
+                self.locals.pop();
+                out?
+            }
+            _ => return Err(format!("wrong arguments for `{name}`")),
+        };
+        self.i = after;
+        Ok(Some(v))
     }
 
     fn sum(&mut self) -> Result<f64, String> {
@@ -414,11 +630,16 @@ impl Parser<'_> {
         match t {
             Tok::Num(x) => Ok(x),
             Tok::LP => {
-                let v = self.sum()?;
+                let v = self.or_()?;
                 self.expect_rp()?;
                 Ok(v)
             }
             Tok::Id(name) => {
+                if self.peek() == Some(&Tok::LP)
+                    && let Some(v) = self.lazy_form(&name)?
+                {
+                    return Ok(v);
+                }
                 if self.peek() == Some(&Tok::LP) {
                     self.i += 1;
                     let mut args = Vec::new();
@@ -426,7 +647,7 @@ impl Parser<'_> {
                         self.i += 1;
                     } else {
                         loop {
-                            args.push(self.sum()?);
+                            args.push(self.or_()?);
                             match self.peek() {
                                 Some(Tok::Comma) => self.i += 1,
                                 Some(Tok::RP) => {
@@ -445,7 +666,12 @@ impl Parser<'_> {
                 match name.as_str() {
                     "pi" => Ok(std::f64::consts::PI),
                     "e_" => Ok(std::f64::consts::E),
-                    _ => (self.look)(&name),
+                    "true" | "vrai" => Ok(1.0),
+                    "false" | "faux" => Ok(0.0),
+                    _ => match self.locals.iter().rev().find(|(n, _)| *n == name) {
+                        Some((_, v)) => Ok(*v),
+                        None => (self.look)(&name),
+                    },
                 }
             }
             _ => Err("unexpected symbol".into()),
@@ -506,6 +732,20 @@ fn call(name: &str, a: &[f64]) -> Result<f64, String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn conditions_and_loops() {
+        let e = eval_const;
+        assert_eq!(e("if(3 > 2; 10; 20)").unwrap(), 10.0);
+        assert_eq!(e("if(3 <= 2 or 1 = 1; 1; 0)").unwrap(), 1.0);
+        assert_eq!(e("si(not (2 > 1); 1; 5/1)").unwrap(), 5.0);
+        assert_eq!(e("if(1 > 0; 7; 1/0)").unwrap(), 7.0, "untaken branch is not evaluated");
+        assert_eq!(e("sum(i^2; i; 1; 4)").unwrap(), 30.0);
+        assert_eq!(e("prod(i; i; 1; 5)").unwrap(), 120.0);
+        assert_eq!(e("while(n; 1; n < 100; n*2)").unwrap(), 128.0);
+        assert!(e("while(n; 1; n > 0; n+1)").is_err(), "endless loop is cut");
+        assert!(e("if(1; 2)").is_err());
+    }
 
     fn store() -> VarStore {
         let mut s = VarStore::default();
