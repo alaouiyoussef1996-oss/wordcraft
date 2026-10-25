@@ -120,6 +120,42 @@ pub fn show(app: &mut WordApp, ui: &mut Ui) {
         });
     });
 
+    group(ui, "Fonctions", None, app, |ui, app| {
+        let fns: Vec<Value> = app.session.run("calc.functions", &json!({})).ok().and_then(|v| v.get("functions").and_then(Value::as_array).cloned()).unwrap_or_default();
+        let mut cats: Vec<String> = Vec::new();
+        for f in &fns {
+            let c = f.get("category").and_then(Value::as_str).unwrap_or("").to_string();
+            if !cats.contains(&c) {
+                cats.push(c);
+            }
+        }
+        ui.vertical(|ui| {
+            for pair in cats.chunks(2) {
+                ui.horizontal(|ui| {
+                    for cat in pair {
+                        ui.menu_button(cat.as_str(), |ui| {
+                            ui.set_min_width(260.0);
+                            for f in fns.iter().filter(|f| f.get("category").and_then(Value::as_str) == Some(cat.as_str())) {
+                                let name = f.get("name").and_then(Value::as_str).unwrap_or("");
+                                let tpl = f.get("template").and_then(Value::as_str).unwrap_or("");
+                                let help = f.get("help").and_then(Value::as_str).unwrap_or("");
+                                let ok = f.get("available").and_then(Value::as_bool).unwrap_or(false);
+                                let tip = if ok { help.to_string() } else { format!("{help} (moteur de calcul formel : bientôt)") };
+                                if ui.add_enabled(ok, egui::Button::new(format!("{tpl}   —  {name}"))).on_hover_text(tip).clicked() {
+                                    if !st.formula.contains(":=") {
+                                        st.formula = format!("{} := ", if st.var_name.is_empty() { "r" } else { st.var_name.as_str() });
+                                    }
+                                    st.formula.push_str(tpl);
+                                    ui.close();
+                                }
+                            }
+                        });
+                    }
+                });
+            }
+        });
+    });
+
     group(ui, "Calcul", None, app, |ui, app| {
         ui.vertical(|ui| {
             ui.horizontal(|ui| {

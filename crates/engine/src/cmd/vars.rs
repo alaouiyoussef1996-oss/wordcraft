@@ -21,6 +21,7 @@ pub fn specs() -> Vec<CommandSpec> {
         CommandSpec::new("calc.compute", "Calculate", "Math › Calcul", compute).params(
             r#"{"path"?: string, "formula": string ("M := p*L^2/8" defines M; "p*L^2/8" only shows the result), "unit"?: string, "insert"?: bool (default true: put the result in the text as an equation), "display"?: bool}"#,
         ),
+        CommandSpec::new("calc.functions", "Calculation Functions", "Math › Calcul", |_, _| Ok(functions_json())).pure().params("{}"),
         CommandSpec::new("var.eval", "Evaluate Formula", LOC, eval)
             .params(r#"{"path"?: string, "formula": string (e.g. "p*L^2/8"), "name"?: string: also store the result under this name at `path`}"#),
     ]
@@ -130,4 +131,55 @@ fn compute(s: &mut Session, v: &Value) -> CmdResult {
         super::equation::insert_linear(s, &format!("{lhs}={text}{tail}"), p::bool(v, "display"))?;
     }
     Ok(json!({"name": target, "number": x, "text": text, "unit": unit}))
+}
+
+/// One function of the Calcul gallery: name, category, template to insert (`▯` is a blank to
+/// fill), a one-line description, and whether the engine can run it today.
+pub struct CalcFn {
+    pub name: &'static str,
+    pub category: &'static str,
+    pub template: &'static str,
+    pub help: &'static str,
+    pub available: bool,
+}
+
+const fn f(name: &'static str, category: &'static str, template: &'static str, help: &'static str, available: bool) -> CalcFn {
+    CalcFn { name, category, template, help, available }
+}
+
+/// The gallery. `available: false` entries need the symbolic engine (planned) and are shown greyed.
+pub const CALC_FUNCTIONS: &[CalcFn] = &[
+    f("sqrt", "Nombres", "sqrt(▯)", "Racine carrée", true),
+    f("abs", "Nombres", "abs(▯)", "Valeur absolue", true),
+    f("round", "Nombres", "round(▯; 2)", "Arrondi à n décimales", true),
+    f("ceil", "Nombres", "ceil(▯)", "Entier supérieur", true),
+    f("floor", "Nombres", "floor(▯)", "Entier inférieur", true),
+    f("min", "Nombres", "min(▯; ▯)", "Plus petite valeur", true),
+    f("max", "Nombres", "max(▯; ▯)", "Plus grande valeur", true),
+    f("sin", "Trigonométrie", "sin(▯)", "Sinus (radians)", true),
+    f("cos", "Trigonométrie", "cos(▯)", "Cosinus (radians)", true),
+    f("tan", "Trigonométrie", "tan(▯)", "Tangente (radians)", true),
+    f("asin", "Trigonométrie", "asin(▯)", "Arc sinus", true),
+    f("acos", "Trigonométrie", "acos(▯)", "Arc cosinus", true),
+    f("atan", "Trigonométrie", "atan(▯)", "Arc tangente", true),
+    f("exp", "Exponentielle et log", "exp(▯)", "Exponentielle", true),
+    f("ln", "Exponentielle et log", "ln(▯)", "Logarithme népérien", true),
+    f("log", "Exponentielle et log", "log(▯)", "Logarithme décimal", true),
+    f("solve", "Algèbre", "solve(▯ = 0; x)", "Résoudre une équation", false),
+    f("simplify", "Algèbre", "simplify(▯)", "Simplifier une expression", false),
+    f("expand", "Algèbre", "expand(▯)", "Développer", false),
+    f("factor", "Algèbre", "factor(▯)", "Factoriser", false),
+    f("diff", "Analyse", "diff(▯; x)", "Dériver par rapport à x", false),
+    f("integrate", "Analyse", "integrate(▯; x)", "Primitive (ou intégrale avec bornes)", false),
+    f("limit", "Analyse", "limit(▯; x; 0)", "Limite", false),
+    f("sum", "Analyse", "sum(▯; i; 1; n)", "Somme", false),
+    f("det", "Matrices", "det(▯)", "Déterminant", false),
+    f("inv", "Matrices", "inv(▯)", "Inverse d'une matrice", false),
+    f("transpose", "Matrices", "transpose(▯)", "Transposée", false),
+    f("eigenvals", "Matrices", "eigenvals(▯)", "Valeurs propres", false),
+    f("linsolve", "Matrices", "linsolve(▯; ▯)", "Résoudre un système A·x = b", false),
+];
+
+fn functions_json() -> Value {
+    json!({"functions": CALC_FUNCTIONS.iter().map(|c| json!({"name": c.name, "category": c.category, "template": c.template, "help": c.help, "available": c.available})).collect::<Vec<_>>()})
 }
