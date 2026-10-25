@@ -1,0 +1,29 @@
+name: Windows exe (test build)
+
+# Builds wordcraft.exe for Windows and uploads it as a downloadable artifact.
+# Run it from the Actions tab: "Windows exe (test build)" > "Run workflow".
+on:
+  workflow_dispatch:
+  push:
+    branches: [calcul-variables]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: windows-latest
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build
+        run: cargo build --release -p wordcraft
+      - name: Package
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force dist | Out-Null
+          Copy-Item target/release/wordcraft.exe dist/WordCraft-Calcul.exe
+      - uses: actions/upload-artifact@v4
+        with:
+          name: WordCraft-Calcul-windows
+          path: dist/WordCraft-Calcul.exe
